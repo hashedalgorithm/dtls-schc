@@ -24,6 +24,12 @@
 /* maximum number of bytes the RCS field can be */
 #define MAX_RCS_SIZE_BYTES  4
 
+#define DTLS_TYPE_FIELD    2000
+#define DTLS_VERSION_FIELD 2001
+#define DTLS_EPOCH_FIELD   2002
+#define DTLS_SEQ_FIELD     2003
+#define DTLS_LENGTH_FIELD  2004
+
 typedef struct schc_bitarray_t {
 	uint8_t* ptr;
 	uint32_t offset; // in bits
@@ -83,6 +89,7 @@ typedef enum {
 	COAP_MID,
 	COAP_TKN,
 	COAP_PAYLOAD
+
 } schc_header_fields;
 
 static const char * const schc_header_field_names[] = {
@@ -181,20 +188,46 @@ struct schc_layer_rule_t {
 	struct schc_field content[];
 };
 
+// struct schc_compression_rule_t {
+// 	/* the rule id, can be maximum 4 bytes wide, defined by the profile */
+// 	uint32_t rule_id;
+// #if USE_IP6 == 1
+// 	/* a pointer to the IPv6 rule */
+// 	const struct schc_ipv6_rule_t* ipv6_rule;
+// #endif
+// #if USE_UDP == 1
+// 	/* a pointer to the UDP rule */
+// 	const struct schc_udp_rule_t* udp_rule;
+// #endif
+// #if USE_COAP == 1
+// 	/* a pointer to the CoAP rule */
+// 	const struct schc_coap_rule_t* coap_rule;
+// #endif
+// };
+
+/* Number of fields in a DTLS record header */
+#define DTLS_FIELDS 5
+
+#if USE_DTLS == 1
+struct schc_dtls_rule_t {
+	uint8_t up;
+	uint8_t down;
+	uint8_t length;
+	struct schc_field content[DTLS_FIELDS];
+};
+#endif
+
+/* ------------------------------------------------------------------ */
+/* REPLACE (or patch) the existing schc_compression_rule_t struct      */
+/* Add the dtls_rule pointer at the end                                */
+/* ------------------------------------------------------------------ */
 struct schc_compression_rule_t {
-	/* the rule id, can be maximum 4 bytes wide, defined by the profile */
 	uint32_t rule_id;
-#if USE_IP6 == 1
-	/* a pointer to the IPv6 rule */
-	const struct schc_ipv6_rule_t* ipv6_rule;
-#endif
-#if USE_UDP == 1
-	/* a pointer to the UDP rule */
-	const struct schc_udp_rule_t* udp_rule;
-#endif
-#if USE_COAP == 1
-	/* a pointer to the CoAP rule */
-	const struct schc_coap_rule_t* coap_rule;
+	const struct schc_ipv6_rule_t  *ipv6_rule;
+	const struct schc_udp_rule_t   *udp_rule;
+	const struct schc_coap_rule_t  *coap_rule;
+#if USE_DTLS == 1
+	const struct schc_dtls_rule_t  *dtls_rule;   /* NEW */
 #endif
 };
 

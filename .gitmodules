@@ -1,3 +1,0 @@
-[submodule "build/libschc"]
-	path = build/libschc
-	url = https://github.com/imec-idlab/libschc.git

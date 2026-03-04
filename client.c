@@ -8,12 +8,26 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
+#include <execinfo.h>
 
 #include "dtls_schc.h"
 #include "dtls_rules_config.h"
 
+static void crash_handler(int sig)
+{
+    void *bt[32];
+    int   n = backtrace(bt, 32);
+    fprintf(stderr, "Signal %d:\n", sig);
+    backtrace_symbols_fd(bt, n, 2);
+    _exit(1);
+}
+
+
 #define SERV_PORT 11111
 #define MSGLEN    4096
+
+
 
 /* ── shared send buffer (file-scope, not stack) ─────────────────── */
 static uint8_t g_send_buf[4096];
@@ -25,6 +39,12 @@ static uint8_t g_send_buf[4096];
 /* ------------------------------------------------------------------ */
 static int schc_send_callback(WOLFSSL *ssl, char *buf, int sz, void *ctx)
 {
+
+    if (ctx == NULL) {
+        fprintf(stderr, "SEND CALLBACK: ctx is NULL\n");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+
     (void)ssl;
     int sockfd = *(int *)ctx;
 
@@ -69,6 +89,11 @@ static int schc_send_callback(WOLFSSL *ssl, char *buf, int sz, void *ctx)
 /* ------------------------------------------------------------------ */
 static int schc_recv_callback(WOLFSSL *ssl, char *buf, int sz, void *ctx)
 {
+    if (ctx == NULL) {
+        fprintf(stderr, "SEND CALLBACK: ctx is NULL\n");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+
     (void)ssl;
     int     sockfd = *(int *)ctx;
     uint8_t raw[4096];
@@ -114,15 +139,20 @@ static int schc_recv_callback(WOLFSSL *ssl, char *buf, int sz, void *ctx)
 /* ------------------------------------------------------------------ */
 int main(int argc, char **argv)
 {
+    signal(SIGSEGV, crash_handler);
+    signal(SIGBUS,  crash_handler);
+
     int                sockfd;
     struct sockaddr_in servAddr;
     WOLFSSL_CTX       *ctx;
     WOLFSSL           *ssl;
-    const char        *host = (argc > 1) ? argv[1] : "127.0.0.1";
+    const char *host = "127.0.0.1";
     const char        *msg  = "Hello from DTLS client!";
     char               buff[MSGLEN];
 
     wolfSSL_Init();
+    wolfSSL_Debugging_ON();
+    dtls_schc_init();
 
 #ifdef DEBUG_WOLFSSL
     wolfSSL_Debugging_ON();
@@ -132,19 +162,23 @@ int main(int argc, char **argv)
         fprintf(stderr, "wolfSSL_CTX_new error\n");
         return 1;
     }
+    wolfSSL_CTX_SetIOSend(ctx, schc_send_callback);
+    wolfSSL_CTX_SetIORecv(ctx, schc_recv_callback);
 
     wolfSSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, 0);
 
-    if (wolfSSL_CTX_load_verify_locations(ctx, "../certs/ca-cert.pem", 0)
-            != SSL_SUCCESS) {
-        fprintf(stderr, "Error loading ca-cert.pem\n");
-        wolfSSL_CTX_free(ctx);
-        return 1;
-    }
+    // if (wolfSSL_CTX_load_verify_locations(ctx, "../certs/ca-cert.pem", 0)
+    //         != SSL_SUCCESS) {
+    //     fprintf(stderr, "Error loading ca-cert.pem\n");
+    //     wolfSSL_CTX_free(ctx);
+    //     return 1;
+    // }
 
     memset(&servAddr, 0, sizeof(servAddr));
     servAddr.sin_family = AF_INET;
     servAddr.sin_port   = htons(SERV_PORT);
+
+
     if (inet_pton(AF_INET, host, &servAddr.sin_addr) < 1) {
         fprintf(stderr, "Invalid address: %s\n", host);
         wolfSSL_CTX_free(ctx);
@@ -157,20 +191,34 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if ((ssl = wolfSSL_new(ctx)) == NULL) {
+    int *sock_ctx = malloc(sizeof(int));
+    if (!sock_ctx) {
+        perror("malloc");
+        return 1;
+    }
+    *sock_ctx = sockfd;
+
+    if (connect(sockfd, (struct sockaddr *)&servAddr, sizeof(servAddr)) < 0) {
+        perror("connect");
+        wolfSSL_CTX_free(ctx);
+        close(sockfd);
+        return 1;
+    }
+
+    ssl = wolfSSL_new(ctx);
+    if (ssl == NULL) {
         fprintf(stderr, "wolfSSL_new error\n");
         wolfSSL_CTX_free(ctx);
         close(sockfd);
         return 1;
     }
 
+    /* Set IO context AFTER successful creation */
+    wolfSSL_SetIOWriteCtx(ssl, sock_ctx);
+    wolfSSL_SetIOReadCtx(ssl,  sock_ctx);
+
     wolfSSL_dtls_set_peer(ssl, &servAddr, sizeof(servAddr));
 
-    /* Wire up SCHC IO hooks */
-    wolfSSL_SetIOSend(ssl,         schc_send_callback);
-    wolfSSL_SetIORecv(ssl,         schc_recv_callback);
-    wolfSSL_SetIOWriteCtx(ssl,     &sockfd);
-    wolfSSL_SetIOReadCtx(ssl,      &sockfd);
 
     if (wolfSSL_connect(ssl) != SSL_SUCCESS) {
         int  err = wolfSSL_get_error(ssl, 0);
@@ -203,6 +251,7 @@ int main(int argc, char **argv)
     }
 
     wolfSSL_shutdown(ssl);
+    free(sock_ctx);
     wolfSSL_free(ssl);
     wolfSSL_CTX_free(ctx);
     wolfSSL_Cleanup();

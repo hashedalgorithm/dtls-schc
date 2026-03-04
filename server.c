@@ -128,6 +128,8 @@ int main(void)
     sigaction(SIGINT, &act, NULL);
 
     wolfSSL_Init();
+    wolfSSL_Debugging_ON();
+    dtls_schc_init();
 
 #ifdef DEBUG_WOLFSSL
     wolfSSL_Debugging_ON();
@@ -201,6 +203,10 @@ int main(void)
         }
 
         wolfSSL_dtls_set_peer(ssl, &cliAddr, sizeof(cliAddr));
+
+        /* Wire up SCHC IO hooks before the handshake */
+        wolfSSL_set_fd(ssl, listenfd);
+        /* ADDED LINE END */
 
         /* Wire up SCHC IO hooks before the handshake */
         wolfSSL_SetIOSend(ssl,     schc_send_callback);

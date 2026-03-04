@@ -137,5 +137,5 @@ static struct schc_device dtls_device_relaxed = {
     .compression_context    = (const struct schc_compression_rule_t **)
                                   dtls_rules_relaxed
 };
-
+r
 #endif /* DTLS_RULE_CONFIG_H */

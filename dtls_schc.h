@@ -33,6 +33,8 @@ typedef struct {
 
 /* ── API ────────────────────────────────────────────────────────── */
 
+void dtls_schc_init(void);
+
 /*
  * Copy the first DTLS_HEADER_LEN bytes of `raw` into `header_out`.
  * Returns 0 on success, -1 if raw_len < DTLS_HEADER_LEN.

@@ -5,6 +5,11 @@
 #include <string.h>
 #include <stdio.h>
 
+void dtls_schc_init(void)
+{
+    schc_compressor_init();
+}
+
 /* ------------------------------------------------------------------ */
 int dtls_parse_header(const uint8_t *raw,
                       size_t         raw_len,

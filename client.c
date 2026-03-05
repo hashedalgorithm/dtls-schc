@@ -81,8 +81,6 @@ static int initialize_wolfssl() {
         fprintf(stderr, "wolfSSL_CTX_new error\n");
         return 1;
     }
-    wolfSSL_CTX_SetIOSend(ctx, schc_send_callback);
-    wolfSSL_CTX_SetIORecv(ctx, schc_recv_callback);
 
     // Disables Server certificate verification.
     wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
@@ -151,7 +149,6 @@ int main() {
 
     if (socket_file_descriptor < 0) {
         perror("socket");
-        wolfSSL_CTX_free(ctx);
         return 1;
     }
 
@@ -163,7 +160,6 @@ int main() {
         close_connection(socket_file_descriptor);
         return 1;
     }
-    *sock_ctx = sockfd;
 
     /* Tell wolfSSL the peer address before connecting */
     wolfSSL_dtls_set_peer(wolfssl, &server_address, sizeof(server_address));

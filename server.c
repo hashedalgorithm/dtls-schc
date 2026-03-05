@@ -37,7 +37,7 @@ static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     return resp;
 }
 
-static int dtls_recv_cb(WOLFSSL *_, char *buffer, int size, void *context) {
+static int receive_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     uint8_t result_buffer[MSGLEN];
     int socket_file_descriptor = *(int *)context;
 

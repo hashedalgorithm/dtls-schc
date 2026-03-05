@@ -26,3 +26,9 @@ add_executable(client client.c ${DTLS_SCHC_SOURCES})
 target_include_directories(client PRIVATE . schc-mini/)
 target_compile_definitions(client PRIVATE USE_DTLS=1)
 target_link_libraries(client wolfssl pthread)
+
+# ── test ───────────────────────────────────────────────────────────
+add_executable(test test/test.c ${DTLS_SCHC_SOURCES})
+target_include_directories(test PRIVATE . schc-mini/)
+target_compile_definitions(test PRIVATE USE_DTLS=1)
+target_link_libraries(test wolfssl pthread)

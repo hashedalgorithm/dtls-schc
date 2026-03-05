@@ -28,20 +28,19 @@ static void run_test(const char *label,
                            const uint16_t version,
                            const uint16_t epoch,
                            uint8_t seq[6]) {
-    uint8_t input[DTLS_HEADER_LEN + sizeof(dummy_payload)];
+    uint8_t input[DTLS_HDR_LEN + sizeof(dummy_payload)];
     uint8_t output[4096];
 
     build_dtls_header(input, type, version, epoch, seq,
                       sizeof(dummy_payload));
-    memcpy(input + DTLS_HEADER_LEN, dummy_payload,
+    memcpy(input + DTLS_HDR_LEN, dummy_payload,
            sizeof(dummy_payload));
 
-    int compressed = dtls_mini_compress(
+    int compressed = schc_compress(
         input, sizeof(input), output, sizeof(output));
 
-    uint8_t rule = output[0];
-    const char *rule_name =
-            rule == MINI_RULE_STRICT ? "STRICT" : rule == MINI_RULE_RELAXED ? "RELAXED" : "NONE";
+    const uint8_t rule = output[0];
+    const char *rule_name = schc_rule_name(rule);
 
     printf("%-30s | rule=%-7s | in=%3zu | out=%3d | diff=%+d\n",
            label, rule_name,

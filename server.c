@@ -24,7 +24,7 @@ static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     uint8_t result_buffer[MSGLEN];
     const int socket_file_descriptor = *(int *)context;
 
-    int out_len = dtls_mini_compress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    int out_len = schc_compress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
     if (out_len < 0) {
         fprintf(stderr, "dtls_mini_compress failed\n");
         return WOLFSSL_CBIO_ERR_GENERAL;
@@ -52,7 +52,7 @@ static int receive_dtls_record(WOLFSSL *_, char *buffer, int size, void *context
     }
     if (resp == 0) return WOLFSSL_CBIO_ERR_CONN_CLOSE;
 
-    const int out_len = dtls_mini_decompress(result_buffer, (size_t)resp, (uint8_t *)buffer, (size_t)size);
+    const int out_len = schc_decompress(result_buffer, (size_t)resp, (uint8_t *)buffer, (size_t)size);
 
     if (out_len < 0) {
         fprintf(stderr, "dtls_mini_decompress failed (received %d bytes)\n",

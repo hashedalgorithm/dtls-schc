@@ -1,31 +1,17 @@
-#include <signal.h>
-#include<wolfssl/options.h>
+#include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
+#include "schc_mini.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
+#include <signal.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <signal.h>
 #include <execinfo.h>
 
-#include "dtls_schc.h"
-#include "dtls_rules_config.h"
-
-static void crash_handler(int sig)
-{
-    void *bt[32];
-    int   n = backtrace(bt, 32);
-    fprintf(stderr, "Signal %d:\n", sig);
-    backtrace_symbols_fd(bt, n, 2);
-    _exit(1);
-}
-
-
-#include "schc_mini.h"
 
 #define SERV_IP "127.0.0.1"
 #define SERV_PORT 11111
@@ -40,9 +26,9 @@ WOLFSSL *wolfssl;
 
 static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     uint8_t result_buffer[MSGLEN];
-    const int socket_file_descriptor = *(int *)context;
+    const int socket_file_descriptor = *(int *) context;
 
-    int out_len = dtls_mini_compress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    int out_len = dtls_mini_compress((uint8_t *) buffer, (size_t) size, result_buffer, sizeof(result_buffer));
     if (out_len < 0) {
         fprintf(stderr, "dtls_mini_compress failed\n");
         return WOLFSSL_CBIO_ERR_GENERAL;
@@ -51,7 +37,7 @@ static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, out_len);
 
     printf("dtls_mini_compress %d bytes\n", out_len);
-    int resp = (int)send(socket_file_descriptor, result_buffer, out_len, 0);
+    int resp = (int) send(socket_file_descriptor, result_buffer, out_len, 0);
     if (resp < 0) {
         perror("send");
         return WOLFSSL_CBIO_ERR_GENERAL;
@@ -61,16 +47,16 @@ static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
 
 static int receive_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     uint8_t result_buffer[MSGLEN];
-    int socket_file_descriptor = *(int *)context;
+    int socket_file_descriptor = *(int *) context;
 
-    const int resp = (int)recv(socket_file_descriptor, result_buffer, sizeof(result_buffer), 0);
+    const int resp = (int) recv(socket_file_descriptor, result_buffer, sizeof(result_buffer), 0);
     if (resp < 0) {
         perror("recv");
         return WOLFSSL_CBIO_ERR_GENERAL;
     }
     if (resp == 0) return WOLFSSL_CBIO_ERR_CONN_CLOSE;
 
-    const int out_len = dtls_mini_decompress(result_buffer, (size_t)resp, (uint8_t *)buffer, (size_t)size);
+    const int out_len = dtls_mini_decompress(result_buffer, (size_t) resp, (uint8_t *) buffer, (size_t) size);
     if (out_len < 0) {
         fprintf(stderr, "dtls_mini_decompress failed (received %d bytes)\n",
                 resp);
@@ -151,7 +137,7 @@ int main() {
     sigaction(SIGINT, &new_signal_action, &old_signal_action);
 
     int resp = initialize_wolfssl();
-    if ( resp > 0) return resp;
+    if (resp > 0) return resp;
 
     memset(&server_address, 0, sizeof(server_address));
     server_address.sin_family = AF_INET;
@@ -170,7 +156,8 @@ int main() {
     }
 
     // Connect to the socket before binding it with Wolfssl
-    const int connect_result = connect(socket_file_descriptor, (struct sockaddr *)&server_address, sizeof(server_address));
+    const int connect_result = connect(socket_file_descriptor, (struct sockaddr *) &server_address,
+                                       sizeof(server_address));
     if (connect_result < 0) {
         fprintf(stderr, "Connection to the server failed: %s\n", SERV_IP);
         close_connection(socket_file_descriptor);
@@ -183,7 +170,7 @@ int main() {
     wolfSSL_set_fd(wolfssl, socket_file_descriptor);
 
     wolfSSL_SetIOWriteCtx(wolfssl, &socket_file_descriptor);
-    wolfSSL_SetIOReadCtx(wolfssl,  &socket_file_descriptor);
+    wolfSSL_SetIOReadCtx(wolfssl, &socket_file_descriptor);
 
     wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
 
@@ -195,12 +182,12 @@ int main() {
         return handle_error(handshake_result, socket_file_descriptor);
     }
 
-    printf("Handshake complete. Sending message...\n");
+    printf("Handshake complete!. Sending message...\n");
 
     /* Send one message */
     resp = wolfSSL_write(wolfssl, msg, (int) strlen(msg));
     if (resp < 0) {
-       return handle_error(resp, socket_file_descriptor);
+        return handle_error(resp, socket_file_descriptor);
     }
 
     printf("Sent: \"%s\"\n", msg);

@@ -43,31 +43,45 @@ static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     const int socket_file_descriptor = *(int *)context;
 
     int out_len = dtls_mini_compress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    if (out_len < 0) {
+        fprintf(stderr, "dtls_mini_compress failed\n");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
     // print_dtls_record(SEND_DTLS_RECORD, buffer, size);
-    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, MSGLEN);
+    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, out_len);
 
     printf("dtls_mini_compress %d bytes\n", out_len);
-    int resp = (int)send(socket_file_descriptor, result_buffer, size, 0);
+    int resp = (int)send(socket_file_descriptor, result_buffer, out_len, 0);
     if (resp < 0) {
         perror("send");
         return WOLFSSL_CBIO_ERR_GENERAL;
     }
-    return resp;
+    return size;
 }
 
 static int receive_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     uint8_t result_buffer[MSGLEN];
     int socket_file_descriptor = *(int *)context;
 
-    int out_len = dtls_mini_decompress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
-    printf("dtls_mini_decompress %d bytes\n", out_len);
-    int resp = (int)recv(socket_file_descriptor, result_buffer, size, 0);
+    const int resp = (int)recv(socket_file_descriptor, result_buffer, sizeof(result_buffer), 0);
     if (resp < 0) {
         perror("recv");
         return WOLFSSL_CBIO_ERR_GENERAL;
     }
     if (resp == 0) return WOLFSSL_CBIO_ERR_CONN_CLOSE;
-    return resp;
+
+    const int out_len = dtls_mini_decompress(result_buffer, (size_t)resp, (uint8_t *)buffer, (size_t)size);
+    if (out_len < 0) {
+        fprintf(stderr, "dtls_mini_decompress failed (received %d bytes)\n",
+                resp);
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+
+    printf("dtls_mini_decompress %d bytes\n", out_len);
+    // print_dtls_record(SEND_DTLS_RECORD, buffer, size);
+    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, MSGLEN);
+
+    return out_len;
 }
 
 
@@ -88,7 +102,7 @@ static int initialize_wolfssl() {
     wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
 
     wolfSSL_CTX_SetIOSend(wolfssl_ctx, send_dtls_record);
-    wolfSSL_CTX_SetIORecv(wolfssl_ctx, dtls_recv_cb);
+    wolfSSL_CTX_SetIORecv(wolfssl_ctx, receive_dtls_record);
 
     // Creating new wolfssl object from contex
     wolfssl = wolfSSL_new(wolfssl_ctx);

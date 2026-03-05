@@ -1,5 +1,6 @@
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
+#include "schc_mini.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+
 #define SERV_IP "127.0.0.1"
 #define SERV_PORT 11111
 #define MSGLEN    4096
@@ -17,6 +19,39 @@ WOLFSSL_CTX *wolfssl_ctx;
 WOLFSSL *wolfssl;
 
 static int flag_stop = 0;
+
+static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
+    uint8_t result_buffer[MSGLEN];
+    const int socket_file_descriptor = *(int *)context;
+
+    int out_len = dtls_mini_compress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    // print_dtls_record(SEND_DTLS_RECORD, buffer, size);
+    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, MSGLEN);
+
+    printf("dtls_mini_compress %d bytes\n", out_len);
+    int resp = (int)send(socket_file_descriptor, result_buffer, size, 0);
+    if (resp < 0) {
+        perror("send");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+    return resp;
+}
+
+static int dtls_recv_cb(WOLFSSL *_, char *buffer, int size, void *context) {
+    uint8_t result_buffer[MSGLEN];
+    int socket_file_descriptor = *(int *)context;
+
+    int out_len = dtls_mini_decompress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    printf("dtls_mini_decompress %d bytes\n", out_len);
+    int resp = (int)recv(socket_file_descriptor, result_buffer, size, 0);
+    if (resp < 0) {
+        perror("recv");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+    if (resp == 0) return WOLFSSL_CBIO_ERR_CONN_CLOSE;
+    return resp;
+}
+
 
 int initialize_wolfssl() {
     wolfSSL_Init();
@@ -43,6 +78,9 @@ int initialize_wolfssl() {
         fprintf(stderr, "Error loading server-key.pem\n");
         return 1;
     }
+
+    wolfSSL_CTX_SetIOSend(wolfssl_ctx, send_dtls_record);
+    wolfSSL_CTX_SetIORecv(wolfssl_ctx, dtls_recv_cb);
 
     return 0;
 }
@@ -142,6 +180,9 @@ int main() {
 
         wolfSSL_dtls_set_peer(wolfssl, &client_address, sizeof(client_address));
         wolfSSL_set_fd(wolfssl, socket_file_descriptor);
+
+        wolfSSL_SetIOWriteCtx(wolfssl, &socket_file_descriptor);
+        wolfSSL_SetIOReadCtx(wolfssl,  &socket_file_descriptor);
 
         const int handshake_result = wolfSSL_accept(wolfssl);
 

@@ -3,8 +3,8 @@ project(dtls_schc C)
 
 set(CMAKE_C_STANDARD 11)
 
+# ── wolfSSL ──────────────────────────────────────────────────────────
 set(WOLFSSL_PREFIX /opt/homebrew/Cellar/wolfssl/5.8.4)
-
 include_directories(${WOLFSSL_PREFIX}/include)
 link_directories(${WOLFSSL_PREFIX}/lib)
 

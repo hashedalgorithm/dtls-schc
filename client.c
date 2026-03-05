@@ -10,16 +10,53 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "schc_mini.h"
+
 #define SERV_IP "127.0.0.1"
 #define SERV_PORT 11111
 #define MSGLEN    4096
+
 
 static int flag_stop = 0;
 
 WOLFSSL_CTX *wolfssl_ctx;
 WOLFSSL *wolfssl;
 
-int initialize_wolfssl() {
+
+static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
+    uint8_t result_buffer[MSGLEN];
+    const int socket_file_descriptor = *(int *)context;
+
+    int out_len = dtls_mini_compress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    // print_dtls_record(SEND_DTLS_RECORD, buffer, size);
+    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, MSGLEN);
+
+    printf("dtls_mini_compress %d bytes\n", out_len);
+    int resp = (int)send(socket_file_descriptor, result_buffer, size, 0);
+    if (resp < 0) {
+        perror("send");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+    return resp;
+}
+
+static int dtls_recv_cb(WOLFSSL *_, char *buffer, int size, void *context) {
+    uint8_t result_buffer[MSGLEN];
+    int socket_file_descriptor = *(int *)context;
+
+    int out_len = dtls_mini_decompress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    printf("dtls_mini_decompress %d bytes\n", out_len);
+    int resp = (int)recv(socket_file_descriptor, result_buffer, size, 0);
+    if (resp < 0) {
+        perror("recv");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+    if (resp == 0) return WOLFSSL_CBIO_ERR_CONN_CLOSE;
+    return resp;
+}
+
+
+static int initialize_wolfssl() {
     wolfSSL_Init();
     wolfSSL_Debugging_ON();
 
@@ -33,6 +70,9 @@ int initialize_wolfssl() {
     // Disables Server certificate verification.
     wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
 
+    wolfSSL_CTX_SetIOSend(wolfssl_ctx, send_dtls_record);
+    wolfSSL_CTX_SetIORecv(wolfssl_ctx, dtls_recv_cb);
+
     // Creating new wolfssl object from contex
     wolfssl = wolfSSL_new(wolfssl_ctx);
 
@@ -44,7 +84,7 @@ int initialize_wolfssl() {
     return 0;
 }
 
-void close_connection(int socket_file_descriptor) {
+static void close_connection(int socket_file_descriptor) {
     wolfSSL_shutdown(wolfssl);
     wolfSSL_free(wolfssl);
     wolfSSL_CTX_free(wolfssl_ctx);
@@ -53,7 +93,7 @@ void close_connection(int socket_file_descriptor) {
     printf("Closing connection and exiting.\n");
 }
 
-int handle_error(int result, int socket_file_descriptor) {
+static int handle_error(int result, int socket_file_descriptor) {
     int error = wolfSSL_get_error(wolfssl, result);
     char buf[80];
     fprintf(stderr, "wolfSSL_connect error %d: %s\n", error,
@@ -97,9 +137,21 @@ int main() {
         return 1;
     }
 
+    // Connect to the socket before binding it with Wolfssl
+    const int connect_result = connect(socket_file_descriptor, (struct sockaddr *)&server_address, sizeof(server_address));
+    if (connect_result < 0) {
+        fprintf(stderr, "Connection to the server failed: %s\n", SERV_IP);
+        close_connection(socket_file_descriptor);
+        return 1;
+    }
+
     /* Tell wolfSSL the peer address before connecting */
     wolfSSL_dtls_set_peer(wolfssl, &server_address, sizeof(server_address));
     wolfSSL_set_fd(wolfssl, socket_file_descriptor);
+
+    wolfSSL_SetIOWriteCtx(wolfssl, &socket_file_descriptor);
+    wolfSSL_SetIOReadCtx(wolfssl,  &socket_file_descriptor);
+
     wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
 
 

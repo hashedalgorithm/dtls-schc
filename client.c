@@ -12,96 +12,101 @@
 #define SERV_PORT 11111
 #define MSGLEN    4096
 
-int main(int argc, char **argv)
-{
-    int                sockfd;
-    struct sockaddr_in servAddr;
-    WOLFSSL_CTX       *ctx;
-    WOLFSSL           *ssl;
-    const char        *host   = (argc > 1) ? argv[1] : "127.0.0.1";
-    const char        *msg    = "Hello from DTLS client!";
-    char               buff[MSGLEN];
-    int                n;
+static int flag_stop = 0;
 
+WOLFSSL_CTX *wolfssl_ctx;
+WOLFSSL *wolfssl;
+
+int initialize_wolfssl() {
     wolfSSL_Init();
-
-#ifdef DEBUG_WOLFSSL
     wolfSSL_Debugging_ON();
-#endif
 
-    if ((ctx = wolfSSL_CTX_new(wolfDTLSv1_2_client_method())) == NULL) {
+    wolfssl_ctx = wolfSSL_CTX_new(wolfDTLSv1_2_client_method());
+
+    if (wolfssl_ctx == NULL) {
         fprintf(stderr, "wolfSSL_CTX_new error\n");
         return 1;
     }
 
-    wolfSSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, 0);
+    // Disables Server certificate verification.
+    wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
 
-    /* Load CA cert to verify server */
-    if (wolfSSL_CTX_load_verify_locations(ctx, "../certs/ca-cert.pem", 0)
-            != SSL_SUCCESS) {
-        fprintf(stderr, "Error loading ca-cert.pem\n");
-        return 1;
-    }
+    // Creating new wolfssl object from contex
+    wolfssl = wolfSSL_new(wolfssl_ctx);
 
-    memset(&servAddr, 0, sizeof(servAddr));
-    servAddr.sin_family = AF_INET;
-    servAddr.sin_port   = htons(SERV_PORT);
-    if (inet_pton(AF_INET, host, &servAddr.sin_addr) < 1) {
-        fprintf(stderr, "Invalid address: %s\n", host);
-        return 1;
-    }
-
-    /* Create UDP socket */
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
-        return 1;
-    }
-
-    if ((ssl = wolfSSL_new(ctx)) == NULL) {
+    if (wolfssl == NULL) {
         fprintf(stderr, "wolfSSL_new error\n");
         return 1;
     }
 
+    return 0;
+}
+
+void close_connection(int socket_file_descriptor) {
+    wolfSSL_shutdown(wolfssl);
+    wolfSSL_free(wolfssl);
+    wolfSSL_CTX_free(wolfssl_ctx);
+    wolfSSL_Cleanup();
+    close(socket_file_descriptor);
+    printf("Closing connection and exiting.\n");
+}
+
+int handle_error(int result, int socket_file_descriptor) {
+    int error = wolfSSL_get_error(wolfssl, result);
+    char buf[80];
+    fprintf(stderr, "wolfSSL_connect error %d: %s\n", error,
+            wolfSSL_ERR_error_string(error, buf));
+    close_connection(socket_file_descriptor);
+    return 1;
+}
+
+int main() {
+    int socket_file_descriptor = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in server_address;
+    const char *host = "127.0.0.1";
+    const char *msg = "Hello from DTLS client!";
+
+    int resp = initialize_wolfssl();
+    if ( resp > 0) return resp;
+
+    memset(&server_address, 0, sizeof(server_address));
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(SERV_PORT);
+
+    const int inet_pton_result = inet_pton(AF_INET, host, &server_address.sin_addr);
+    if (inet_pton_result < 1) {
+        fprintf(stderr, "Invalid address: %s\n", host);
+        return 1;
+    }
+
+    if (socket_file_descriptor < 0) {
+        perror("socket");
+        return 1;
+    }
+
     /* Tell wolfSSL the peer address before connecting */
-    wolfSSL_dtls_set_peer(ssl, &servAddr, sizeof(servAddr));
+    wolfSSL_dtls_set_peer(wolfssl, &server_address, sizeof(server_address));
+    wolfSSL_set_fd(wolfssl, socket_file_descriptor);
+    wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
 
-    wolfSSL_set_fd(ssl, sockfd);
-
-
-    wolfSSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, 0);
 
     /* DTLS handshake */
-    if (wolfSSL_connect(ssl) != SSL_SUCCESS) {
-        int  err = wolfSSL_get_error(ssl, 0);
-        char buf[80];
-        fprintf(stderr, "wolfSSL_connect error %d: %s\n", err,
-                wolfSSL_ERR_error_string(err, buf));
-        wolfSSL_free(ssl);
-        wolfSSL_CTX_free(ctx);
-        wolfSSL_Cleanup();
-        close(sockfd);
-        return 1;
+    const int handshake_result = wolfSSL_connect(wolfssl);
+
+    if (handshake_result != SSL_SUCCESS) {
+        return handle_error(handshake_result, socket_file_descriptor);
     }
 
     printf("Handshake complete! Sending message...\n");
 
     /* Send one message */
-    if (wolfSSL_write(ssl, msg, (int)strlen(msg)) < 0) {
-        int  err = wolfSSL_get_error(ssl, 0);
-        char buf[80];
-        fprintf(stderr, "wolfSSL_write error %d: %s\n", err,
-                wolfSSL_ERR_error_string(err, buf));
-    } else {
-        printf("Sent: \"%s\"\n", msg);
+    resp = wolfSSL_write(wolfssl, msg, (int) strlen(msg));
+    if (resp < 0) {
+       return handle_error(resp, socket_file_descriptor);
     }
 
-    /* Clean shutdown */
-    wolfSSL_shutdown(ssl);
-    wolfSSL_free(ssl);
-    wolfSSL_CTX_free(ctx);
-    wolfSSL_Cleanup();
-    close(sockfd);
+    printf("Sent: \"%s\"\n", msg);
 
-    printf("Client done, exiting.\n");
+    close_connection(socket_file_descriptor);
     return 0;
 }

@@ -1,3 +1,4 @@
+#include <signal.h>
 #include<wolfssl/options.h>
 #include <wolfssl/ssl.h>
 
@@ -9,6 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define SERV_IP "127.0.0.1"
 #define SERV_PORT 11111
 #define MSGLEN    4096
 
@@ -60,11 +62,22 @@ int handle_error(int result, int socket_file_descriptor) {
     return 1;
 }
 
+void signal_handler(const int sig) {
+    printf("\nSIGINT %d handled\n", sig);
+    flag_stop = 1;
+}
+
 int main() {
     int socket_file_descriptor = socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in server_address;
-    const char *host = "127.0.0.1";
     const char *msg = "Hello from DTLS client!";
+
+    /* Signal handling */
+    struct sigaction new_signal_action, old_signal_action;
+    new_signal_action.sa_handler = signal_handler;
+    sigemptyset(&new_signal_action.sa_mask);
+    new_signal_action.sa_flags = 0;
+    sigaction(SIGINT, &new_signal_action, &old_signal_action);
 
     int resp = initialize_wolfssl();
     if ( resp > 0) return resp;
@@ -73,9 +86,9 @@ int main() {
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(SERV_PORT);
 
-    const int inet_pton_result = inet_pton(AF_INET, host, &server_address.sin_addr);
+    const int inet_pton_result = inet_pton(AF_INET, SERV_IP, &server_address.sin_addr);
     if (inet_pton_result < 1) {
-        fprintf(stderr, "Invalid address: %s\n", host);
+        fprintf(stderr, "Invalid address: %s\n", SERV_IP);
         return 1;
     }
 

@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define SERV_IP "127.0.0.1"
 #define SERV_PORT 11111
 #define MSGLEN    4096
 
@@ -61,7 +62,6 @@ void signal_handler(const int sig) {
 }
 
 int main() {
-    const char *host = "127.0.0.1";
     struct sockaddr_in server_address;
     struct sockaddr_in client_address;
 
@@ -73,7 +73,9 @@ int main() {
     new_signal_action.sa_flags = 0;
     sigaction(SIGINT, &new_signal_action, &old_signal_action);
 
-    initialize_wolfssl();
+
+    const int resp = initialize_wolfssl();
+    if ( resp > 0) return resp;
 
     printf("UDP Server listening on port %d\n", SERV_PORT);
 
@@ -107,10 +109,10 @@ int main() {
         memset(&server_address, 0, sizeof(server_address));
         server_address.sin_family = AF_INET;
         server_address.sin_port = htons(SERV_PORT);
-        const int inet_pton_result = inet_pton(AF_INET, host, &server_address.sin_addr);
+        const int inet_pton_result = inet_pton(AF_INET, SERV_IP, &server_address.sin_addr);
 
         if (inet_pton_result < 1) {
-            fprintf(stderr, "Invalid address: %s\n", host);
+            fprintf(stderr, "Invalid address: %s\n", SERV_IP);
             return 1;
         }
 

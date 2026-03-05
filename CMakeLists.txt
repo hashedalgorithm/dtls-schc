@@ -12,9 +12,17 @@ file(GLOB SCHC_SOURCES
         schc-mini/schc_mini.c
 )
 
-add_executable(server server.c)
+# ── SCHC-MINI integration layer ───────────────────────────────────────────
+set(DTLS_SCHC_SOURCES schc-mini/schc_mini.c)
+
+# ── server ───────────────────────────────────────────────────────────
+add_executable(server server.c ${DTLS_SCHC_SOURCES})
+target_include_directories(server PRIVATE . schc-mini/)
+target_compile_definitions(server PRIVATE USE_DTLS=1)
 target_link_libraries(server wolfssl pthread)
 
-
-add_executable(client client.c)
+# ── client ───────────────────────────────────────────────────────────
+add_executable(client client.c ${DTLS_SCHC_SOURCES})
+target_include_directories(client PRIVATE . schc-mini/)
+target_compile_definitions(client PRIVATE USE_DTLS=1)
 target_link_libraries(client wolfssl pthread)

@@ -1,4 +1,5 @@
 #include "schc_mini.h"
+#include <stdio.h>
 #include <string.h>
 
 /* ------------------------------------------------------------- */
@@ -166,4 +167,29 @@ int dtls_mini_decompress(const uint8_t *input,
     memcpy(output + DTLS_HEADER_LEN, ptr, remaining);
 
     return (int)total;
+}
+
+void print_dtls_record(const char *direction, const char *buffer, int size) {
+    printf("\n--- DTLS Record [%s] (%d bytes) ---\n", direction, size);
+    for (int i = 0; i < size; i++) {
+        printf("%02X ", (unsigned char)buffer[i]);
+        if ((i + 1) % 16 == 0) printf("\n");
+    }
+    if (size % 16 != 0) printf("\n");
+
+    /* Decode DTLS record header fields (first 13 bytes) */
+    if (size >= 13) {
+        printf("  Content Type : 0x%02X\n", (unsigned char)buffer[0]);
+        printf("  Version      : %02X %02X\n",
+               (unsigned char)buffer[1], (unsigned char)buffer[2]);
+        printf("  Epoch        : %02X %02X\n",
+               (unsigned char)buffer[3], (unsigned char)buffer[4]);
+        printf("  Sequence     : %02X %02X %02X %02X %02X %02X\n",
+               (unsigned char)buffer[5],  (unsigned char)buffer[6],
+               (unsigned char)buffer[7],  (unsigned char)buffer[8],
+               (unsigned char)buffer[9],  (unsigned char)buffer[10]);
+        printf("  Length       : %d bytes\n",
+               ((unsigned char)buffer[11] << 8) | (unsigned char)buffer[12]);
+    }
+    printf("-----------------------------------\n\n");
 }

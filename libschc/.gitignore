@@ -1,0 +1,14 @@
+schc_config.h
+click_config.h
+rules/rules.h
+rules/rule_config.h
+
+examples/compress
+examples/fragment
+examples/icmpv6
+examples/lwm2m
+/.metadata/
+/.externalToolBuilders/
+/.cproject
+/.settings/*
+/.project

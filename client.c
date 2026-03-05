@@ -9,6 +9,21 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
+#include <execinfo.h>
+
+#include "dtls_schc.h"
+#include "dtls_rules_config.h"
+
+static void crash_handler(int sig)
+{
+    void *bt[32];
+    int   n = backtrace(bt, 32);
+    fprintf(stderr, "Signal %d:\n", sig);
+    backtrace_symbols_fd(bt, n, 2);
+    _exit(1);
+}
+
 
 #include "schc_mini.h"
 
@@ -66,6 +81,8 @@ static int initialize_wolfssl() {
         fprintf(stderr, "wolfSSL_CTX_new error\n");
         return 1;
     }
+    wolfSSL_CTX_SetIOSend(ctx, schc_send_callback);
+    wolfSSL_CTX_SetIORecv(ctx, schc_recv_callback);
 
     // Disables Server certificate verification.
     wolfSSL_CTX_set_verify(wolfssl_ctx, SSL_VERIFY_NONE, 0);
@@ -134,6 +151,7 @@ int main() {
 
     if (socket_file_descriptor < 0) {
         perror("socket");
+        wolfSSL_CTX_free(ctx);
         return 1;
     }
 
@@ -144,6 +162,7 @@ int main() {
         close_connection(socket_file_descriptor);
         return 1;
     }
+    *sock_ctx = sockfd;
 
     /* Tell wolfSSL the peer address before connecting */
     wolfSSL_dtls_set_peer(wolfssl, &server_address, sizeof(server_address));
@@ -162,7 +181,7 @@ int main() {
         return handle_error(handshake_result, socket_file_descriptor);
     }
 
-    printf("Handshake complete! Sending message...\n");
+    printf("Handshake complete. Sending message...\n");
 
     /* Send one message */
     resp = wolfSSL_write(wolfssl, msg, (int) strlen(msg));

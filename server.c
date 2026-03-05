@@ -194,7 +194,7 @@ int main() {
             continue;
         }
 
-        printf("Handshake complete! Reading message...\n");
+        printf("Handshake complete. Reading message...\n");
 
         /* Read one message */
         char buffer[MSGLEN];

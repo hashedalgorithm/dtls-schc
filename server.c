@@ -25,31 +25,45 @@ static int send_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     const int socket_file_descriptor = *(int *)context;
 
     int out_len = dtls_mini_compress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
+    if (out_len < 0) {
+        fprintf(stderr, "dtls_mini_compress failed\n");
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
     // print_dtls_record(SEND_DTLS_RECORD, buffer, size);
-    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, MSGLEN);
+    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, out_len);
 
     printf("dtls_mini_compress %d bytes\n", out_len);
-    int resp = (int)send(socket_file_descriptor, result_buffer, size, 0);
+    int resp = (int)send(socket_file_descriptor, result_buffer, out_len, 0);
     if (resp < 0) {
         perror("send");
         return WOLFSSL_CBIO_ERR_GENERAL;
     }
-    return resp;
+    return size;
 }
 
 static int receive_dtls_record(WOLFSSL *_, char *buffer, int size, void *context) {
     uint8_t result_buffer[MSGLEN];
-    int socket_file_descriptor = *(int *)context;
+    const int socket_file_descriptor = *(int *)context;
 
-    int out_len = dtls_mini_decompress((uint8_t *)buffer, (size_t)size, result_buffer, sizeof(result_buffer));
-    printf("dtls_mini_decompress %d bytes\n", out_len);
-    int resp = (int)recv(socket_file_descriptor, result_buffer, size, 0);
+    const int resp = (int)recv(socket_file_descriptor, result_buffer, sizeof(result_buffer), 0);
     if (resp < 0) {
         perror("recv");
         return WOLFSSL_CBIO_ERR_GENERAL;
     }
     if (resp == 0) return WOLFSSL_CBIO_ERR_CONN_CLOSE;
-    return resp;
+
+    const int out_len = dtls_mini_decompress(result_buffer, (size_t)resp, (uint8_t *)buffer, (size_t)size);
+
+    if (out_len < 0) {
+        fprintf(stderr, "dtls_mini_decompress failed (received %d bytes)\n",
+                resp);
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+    printf("dtls_mini_decompress %d bytes\n", out_len);
+    // print_dtls_record(SEND_DTLS_RECORD, buffer, size);
+    // print_dtls_record(SEND_DTLS_RECORD, (char *)result_buffer, MSGLEN);
+
+    return out_len;
 }
 
 
@@ -80,7 +94,7 @@ int initialize_wolfssl() {
     }
 
     wolfSSL_CTX_SetIOSend(wolfssl_ctx, send_dtls_record);
-    wolfSSL_CTX_SetIORecv(wolfssl_ctx, dtls_recv_cb);
+    wolfSSL_CTX_SetIORecv(wolfssl_ctx, receive_dtls_record);
 
     return 0;
 }
@@ -135,7 +149,7 @@ int main() {
             break;
         }
         /* Avoid socket-in-use error */
-        int on = 0;
+        int on = 1;
         const int res = setsockopt(socket_file_descriptor, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(int));
 
         if (res < 0) {
@@ -167,7 +181,7 @@ int main() {
         /* Peek for incoming datagram */
         socklen_t client_address_size = sizeof(client_address);
         unsigned char raw_bytes[1500];
-        int bytesReceived = (int) recvfrom(socket_file_descriptor, (char *) raw_bytes, sizeof(raw_bytes), MSG_PEEK,
+        const int bytesReceived = (int) recvfrom(socket_file_descriptor, (char *)raw_bytes, sizeof(raw_bytes), MSG_PEEK,
                                        (struct sockaddr *) &client_address, &client_address_size);
 
         if (bytesReceived < 0) {
@@ -175,14 +189,23 @@ int main() {
             close(socket_file_descriptor);
             continue;
         }
+        const int connect_result = connect(socket_file_descriptor, (struct sockaddr *)&client_address, sizeof(client_address));
+        if (connect_result < 0) {
+            fprintf(stderr, "Connection to the server failed: %s\n", SERV_IP);
+            /* Cleanup session */
+            wolfSSL_shutdown(wolfssl);
+            wolfSSL_free(wolfssl);
+            close(socket_file_descriptor);
+            return 1;
+        }
 
         printf("Client connected from %s\n", inet_ntoa(client_address.sin_addr));
 
         wolfSSL_dtls_set_peer(wolfssl, &client_address, sizeof(client_address));
         wolfSSL_set_fd(wolfssl, socket_file_descriptor);
 
-        wolfSSL_SetIOWriteCtx(wolfssl, &socket_file_descriptor);
-        wolfSSL_SetIOReadCtx(wolfssl,  &socket_file_descriptor);
+        wolfSSL_SetIOWriteCtx(wolfssl, (void *)&socket_file_descriptor);
+        wolfSSL_SetIOReadCtx(wolfssl,  (void *)&socket_file_descriptor);
 
         const int handshake_result = wolfSSL_accept(wolfssl);
 
@@ -194,7 +217,7 @@ int main() {
             continue;
         }
 
-        printf("Handshake complete! Reading message...\n");
+        printf("Handshake complete. Reading message...\n");
 
         /* Read one message */
         char buffer[MSGLEN];

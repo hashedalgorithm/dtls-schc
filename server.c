@@ -71,7 +71,7 @@ int initialize_wolfssl() {
     wolfSSL_Init();
     wolfSSL_Debugging_ON();
 
-    wolfssl_ctx = wolfSSL_CTX_new(wolfDTLSv1_2_server_method());
+    wolfssl_ctx = wolfSSL_CTX_new(wolfDTLSv1_3_server_method());
 
     if (wolfssl_ctx == NULL) {
         fprintf(stderr, "wolfSSL_CTX_new error\n");
